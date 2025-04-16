@@ -1,0 +1,94 @@
+.dashboard {
+    padding: 20px;
+}
+
+.dashboard header {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.permission-status {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.warning {
+    color: #ff4444;
+    font-size: 0.9em;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0;
+    margin-top: 20px;
+    background-color: #282828;
+    border-radius: 30px;
+    padding: 5px;
+    width: fit-content;
+    align-self: center;
+}
+
+.view-button {
+    padding: 10px 20px;
+    border: none;
+    background: none;
+    color: #ccc;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.dashboard-title {
+    text-align: center;
+}
+
+.view-button.active {
+    background-color: #4A6FFF;
+    color: white;
+}
+
+.view-button:hover:not(.active) {
+    background-color: #333;
+}
+
+.capture-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+    padding: 40px 20px;
+}
+
+.capture-instructions {
+    max-width: 600px;
+    text-align: center;
+    background-color: #101010;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.capture-instructions p {
+    margin: 10px 0;
+    color: #e0e0e0;
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+.timeline-view {
+    flex: 1;
+    height: calc(100vh - 180px);
+    background-color: #1a1a1a;
+    border-radius: 10px;
+    overflow: hidden;
+}
