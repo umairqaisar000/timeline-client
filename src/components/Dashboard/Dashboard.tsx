@@ -16,7 +16,6 @@ const Dashboard: React.FC = () => {
 
     const requestPermissions = async () => {
         if (!window.electron) return;
-
         try {
             const microphoneResult = await window.electron.requestMediaAccess("microphone");
             setHasMicrophonePermission(microphoneResult);

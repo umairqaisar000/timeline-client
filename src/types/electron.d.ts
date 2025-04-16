@@ -1,5 +1,5 @@
 import 'electron';
-import { ActiveWindowInfo, TimeBasedAnalysis } from './interfaces';
+import { ActiveWindowInfo, ScreenshotAnalysis, TimeBasedAnalysis } from './interfaces';
 
 declare module 'electron' {
     interface App {
@@ -14,9 +14,7 @@ interface Screenshot {
     applicationName?: string;
 }
 
-interface ScreenshotAnalysis {
-    applicationName: string;
-}
+
 
 declare global {
     interface Window {

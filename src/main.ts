@@ -309,10 +309,13 @@ ipcMain.handle('start-screen-capture', async () => {
               
               -- Get list of all running applications
               set appList to {}
-              set runningApps to every application process whose visible is true
+              set runningApps to every application process
               repeat with appProcess in runningApps
                 set appName to name of appProcess
-                set end of appList to appName
+                -- Only add the application name if it's not the front app and not a window title
+                if appName is not frontApp and appName does not contain " - " then
+                  set end of appList to appName
+                end if
               end repeat
               
               return {frontApp, windowTitle, appList}
@@ -445,7 +448,7 @@ ipcMain.handle('start-screen-capture', async () => {
             }
 
             # Get list of all running applications
-            $runningApps = Get-Process | Where-Object { $_.MainWindowTitle -ne "" } | Select-Object -ExpandProperty ProcessName
+            $runningApps = Get-Process | Where-Object { $_.ProcessName -ne $frontApp } | Select-Object -ExpandProperty ProcessName
 
             $obj = @{
                 frontApp = $frontApp
@@ -617,7 +620,8 @@ ipcMain.handle('get-screenshot-analysis', async (_, filename) => {
       return {
         applicationName: jsonData.applicationName,
         windowTitle: jsonData.windowTitle || '',
-        timestamp: jsonData.timestamp || new Date().toISOString()
+        timestamp: jsonData.timestamp || new Date().toISOString(),
+        backgroundApplications: jsonData.openApplications || []
       };
     }
     return null;
@@ -639,6 +643,7 @@ ipcMain.handle('analyze-all-screenshots', async () => {
         return {
           applicationName: jsonData.applicationName,
           windowTitle: jsonData.windowTitle || '',
+          backgroundApplications: jsonData.openApplications || [],
           timestamp: jsonData.timestamp || file.replace('screenshot-', '').replace('.json', ''),
           file
         };
@@ -665,6 +670,7 @@ ipcMain.handle('analyze-all-screenshots', async () => {
         if (currentApp && startTime) {
           timelineData.push({
             applicationName: currentApp,
+            backgroundApplications: current.backgroundApplications,
             timeFrom: startTime,
             timeEnd: current.timestamp
           });
@@ -679,6 +685,7 @@ ipcMain.handle('analyze-all-screenshots', async () => {
       if (i === files.length - 1) {
         timelineData.push({
           applicationName: currentApp,
+          backgroundApplications: current.backgroundApplications,
           timeFrom: startTime,
           timeEnd: current.timestamp
         });
@@ -807,10 +814,13 @@ ipcMain.handle('get-active-window', async () => {
           
           -- Get list of all running applications
           set appList to {}
-          set runningApps to every application process whose visible is true
+          set runningApps to every application process
           repeat with appProcess in runningApps
             set appName to name of appProcess
-            set end of appList to appName
+            -- Only add the application name if it's not the front app and not a window title
+            if appName is not frontApp and appName does not contain " - " then
+              set end of appList to appName
+            end if
           end repeat
           
           return {frontApp, windowTitle, appList}

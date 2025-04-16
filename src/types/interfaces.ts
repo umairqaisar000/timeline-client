@@ -3,6 +3,7 @@
  */
 export interface TimeBasedAnalysis {
     applicationName: string;
+    backgroundApplications: string[];
     timeFrom: string;
     timeEnd: string;
 }
@@ -43,4 +44,11 @@ export interface TimelineProps {
 export interface InterpolatedFrame {
     data: string;
     position: number; // between 0 and 1, representing position between two real frames
+}
+
+export interface ScreenshotAnalysis {
+    applicationName: string;
+    windowTitle: string;
+    timestamp: string;
+    backgroundApplications: string[];
 }

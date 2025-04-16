@@ -11,15 +11,16 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
     const [isLoading, setIsLoading] = useState(true);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [currentPosition, setCurrentPosition] = useState(0); // Precise position including interpolation
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [interpolatedFrames, setInterpolatedFrames] = useState<InterpolatedFrame[]>([]);
-    const [isInterpolating, setIsInterpolating] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false); const [isInterpolating, setIsInterpolating] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [wheelTimeout, setWheelTimeout] = useState<NodeJS.Timeout | null>(null);
     const [tooltipContent, setTooltipContent] = useState<string>('');
     const [tooltipPosition, setTooltipPosition] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
     const [showTooltip, setShowTooltip] = useState<boolean>(false);
+    const [backgroundApplications, setBackgroundApplications] = useState<string[]>([]);
+    const [showSidebar, setShowSidebar] = useState(false);
+    const [isSidebarClosing, setIsSidebarClosing] = useState(false);
 
     const timelineRef = useRef<HTMLDivElement>(null);
     const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -31,7 +32,6 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
     const isDraggingRef = useRef<boolean>(false);
     const previousPositionRef = useRef<number>(0);
     const dragStartX = useRef<number>(0);
-    const sensitivity = useRef<number>(0.5); // Adjust for trackpad sensitivity
 
     useEffect(() => {
         loadScreenshots();
@@ -93,20 +93,39 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
 
             setScreenshots(screenshotsWithApps);
 
-            // Create application segments
+            // Create application segments by consolidating consecutive same apps
             const segments: ApplicationSegment[] = [];
+            let currentSegment: ApplicationSegment | null = null;
+
             for (let i = 0; i < screenshotsWithApps.length; i++) {
                 const current = screenshotsWithApps[i];
                 const next = screenshotsWithApps[i + 1];
-
                 const appName = current.applicationName || 'Unknown';
-                segments.push({
-                    applicationName: appName,
-                    startTime: current.timestamp,
-                    endTime: next ? next.timestamp : current.timestamp + 2000, // Add 2 seconds for the last segment
-                    color: getApplicationColor(appName)
-                });
+
+                if (!currentSegment || currentSegment.applicationName !== appName) {
+                    // If we have a previous segment, add it to the list
+                    if (currentSegment) {
+                        segments.push(currentSegment);
+                    }
+
+                    // Start a new segment
+                    currentSegment = {
+                        applicationName: appName,
+                        startTime: current.timestamp,
+                        endTime: next ? next.timestamp : current.timestamp + 2000,
+                        color: getApplicationColor(appName)
+                    };
+                } else {
+                    // Update the end time of the current segment
+                    currentSegment.endTime = next ? next.timestamp : current.timestamp + 2000;
+                }
             }
+
+            // Add the last segment if it exists
+            if (currentSegment) {
+                segments.push(currentSegment);
+            }
+
             setApplicationSegments(segments);
 
             if (screenshotsWithApps.length > 0) {
@@ -144,7 +163,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
         }
     };
 
-    const loadScreenshot = async (filename: string) => {
+    const loadScreenshot = async (filename: string, isUserInteraction = false) => {
         if (!window.electron) return;
 
         try {
@@ -172,6 +191,21 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                 if (index !== -1) {
                     setCurrentIndex(index);
                     setCurrentPosition(index);
+
+                    // Only load background applications and show sidebar if this is a user interaction
+                    if (isUserInteraction) {
+                        const jsonPath = filename.replace('.png', '.json');
+                        try {
+                            const analysis = await window.electron.getScreenshotAnalysis(jsonPath);
+                            if (analysis) {
+                                setBackgroundApplications(analysis.backgroundApplications || []);
+                                setShowSidebar(true);
+                            }
+                        } catch (error) {
+                            console.error('Error loading background applications:', error);
+                            setBackgroundApplications([]);
+                        }
+                    }
 
                     // Call the callback if provided
                     if (onScreenshotSelect) {
@@ -441,13 +475,13 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
         const newIndex = Math.round(exactPosition);
         const boundedIndex = Math.max(0, Math.min(screenshots.length - 1, newIndex));
 
-        loadScreenshot(screenshots[boundedIndex].filename);
+        loadScreenshot(screenshots[boundedIndex].filename, true); // Pass true for user interaction
     };
 
     const handlePrevious = () => {
         if (currentIndex > 0) {
             const newIndex = currentIndex - 1;
-            loadScreenshot(screenshots[newIndex].filename);
+            loadScreenshot(screenshots[newIndex].filename, true); // Pass true for user interaction
             setCurrentPosition(newIndex);
         }
     };
@@ -455,7 +489,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
     const handleNext = () => {
         if (currentIndex < screenshots.length - 1) {
             const newIndex = currentIndex + 1;
-            loadScreenshot(screenshots[newIndex].filename);
+            loadScreenshot(screenshots[newIndex].filename, true); // Pass true for user interaction
             setCurrentPosition(newIndex);
         } else {
             // If we're at the end, stop playing
@@ -483,7 +517,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
             // Setup interval for playback with interpolation
             const interval = setInterval(() => {
                 setCurrentPosition(prevPosition => {
-                    const nextPosition = prevPosition + (0.2 * playbackSpeed); // Smoother increments for interpolation
+                    const nextPosition = prevPosition + (0.1 * playbackSpeed); // Reduced increment for smoother movement
 
                     if (nextPosition >= screenshots.length - 1) {
                         // Stop playing when reached the end
@@ -500,7 +534,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                     const nextIntegerIndex = Math.floor(nextPosition);
 
                     if (prevIntegerIndex !== nextIntegerIndex) {
-                        loadScreenshot(screenshots[nextIntegerIndex].filename);
+                        loadScreenshot(screenshots[nextIntegerIndex].filename, false); // Pass false for animation
                     }
 
                     // Generate interpolated frame for fractional positions
@@ -511,7 +545,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
 
                     return nextPosition;
                 });
-            }, 50); // 20fps playback rate base
+            }, 100); // Increased interval time from 50ms to 100ms for slower playback
 
             playIntervalRef.current = interval;
             setIsPlaying(true);
@@ -520,7 +554,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
 
     // Toggle playback speed
     const toggleSpeed = () => {
-        const speeds = [0.5, 1, 2, 4];
+        const speeds = [0.25, 0.5, 1, 2]; // Added slower speed options
         const currentSpeedIndex = speeds.indexOf(playbackSpeed);
         const nextSpeedIndex = (currentSpeedIndex + 1) % speeds.length;
         setPlaybackSpeed(speeds[nextSpeedIndex]);
@@ -559,6 +593,14 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
         return dateStr.replace(/\b(am|pm)\b/i, (match) => match.toUpperCase());
     };
 
+    const handleCloseSidebar = () => {
+        setIsSidebarClosing(true);
+        setTimeout(() => {
+            setShowSidebar(false);
+            setIsSidebarClosing(false);
+        }, 300); // Match the animation duration
+    };
+
     if (isLoading) {
         return <div className="timeline-loading">Loading timeline...</div>;
     }
@@ -585,6 +627,31 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                     <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
                 </svg>
             </button>
+
+            {/* Sidebar for background applications */}
+            {showSidebar && (
+                <div className={`background-apps-sidebar ${isSidebarClosing ? 'closing' : ''}`}>
+                    <div className="sidebar-header">
+                        <h3>Background Applications</h3>
+                        <button className="close-sidebar" onClick={handleCloseSidebar}>
+                            <svg viewBox="0 0 24 24">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div className="background-apps-list">
+                        {backgroundApplications.length > 0 ? (
+                            backgroundApplications.map((app, index) => (
+                                <div key={index} className="background-app-item">
+                                    <span className="app-name">{app}</span>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="no-background-apps">No background applications</div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {currentScreenshot && (
                 <div className={`screenshot-display ${isInterpolating ? 'interpolating' : ''}`}>
