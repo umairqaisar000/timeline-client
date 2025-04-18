@@ -26,6 +26,7 @@ export interface Screenshot {
     path: string;
     timestamp: number;
     applicationName?: string;
+    isFirstFrameOfSession?: boolean;
 }
 
 export interface ApplicationSegment {
@@ -33,6 +34,11 @@ export interface ApplicationSegment {
     startTime: number;
     endTime: number;
     color: string;
+    bufferFactor?: number;
+    screenshotIndex?: number; // Index of the screenshot this segment represents
+    startIndex?: number; // Start index of the segment in the screenshots array
+    endIndex?: number; // End index of the segment in the screenshots array
+    screenshotIndices?: number[]; // Array of indices of screenshots in this segment
 }
 
 export interface TimelineProps {
@@ -51,4 +57,18 @@ export interface ScreenshotAnalysis {
     windowTitle: string;
     timestamp: string;
     backgroundApplications: string[];
+    isFirstFrameOfSession: boolean;
+}
+
+export interface AppUsageStats {
+    applicationName: string;
+    totalTimeMs: number;
+    percentage: number;
+    screenshotCount: number;
+}
+
+export interface UsageStats {
+    appStats: AppUsageStats[];
+    totalTimeMs: number;
+    idleTimeMs: number;
 }

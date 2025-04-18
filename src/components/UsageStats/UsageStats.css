@@ -1,0 +1,118 @@
+.usage-stats {
+    background-color: #1a1a1a;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    margin-bottom: 20px;
+}
+
+.usage-stats h3 {
+    margin-top: 0;
+    color: #e0e0e0;
+    font-size: 1.3rem;
+    border-bottom: 1px solid #333;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.stats-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.stat-item {
+    background-color: #2a2a2a;
+    padding: 12px;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.85rem;
+    color: #aaa;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #4a9cf7;
+}
+
+.usage-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    background-color: #2a2a2a;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.usage-table th,
+.usage-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #333;
+    color: #e0e0e0;
+}
+
+.usage-table th {
+    background-color: #222;
+    font-weight: 600;
+    color: #ccc;
+    font-size: 0.9rem;
+}
+
+.usage-table tr:last-child td {
+    border-bottom: none;
+}
+
+.usage-table tr:hover {
+    background-color: #333;
+}
+
+.refresh-button-container {
+    text-align: right;
+    margin-top: 15px;
+}
+
+.refresh-button {
+    background-color: #4a6cf7;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.refresh-button:hover {
+    background-color: #3a5ce5;
+}
+
+.usage-stats-loading,
+.usage-stats-error,
+.usage-stats-empty {
+    padding: 20px;
+    background-color: #2a2a2a;
+    border-radius: 8px;
+    text-align: center;
+    color: #aaa;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.usage-stats-error {
+    color: #e74c3c;
+    border-left: 4px solid #e74c3c;
+}
+
+.usage-stats-empty {
+    color: #aaa;
+    border-left: 4px solid #555;
+}

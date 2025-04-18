@@ -245,33 +245,38 @@
 }
 
 .timeline-item {
-    position: relative;
+    position: absolute;
     display: flex;
     flex-direction: column;
     align-items: center;
     padding-bottom: 20px;
     cursor: pointer;
-    transition: transform 0.2s ease;
-    min-width: 30px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    opacity: 0.6;
+    bottom: 0;
+    z-index: 1;
 }
 
 .timeline-item:hover {
     transform: translateY(-5px);
+    opacity: 1;
 }
 
 .timeline-marker {
-    width: 2px;
+    width: 4px;
     height: 20px;
     background-color: rgba(255, 255, 255, 0.4);
     margin-bottom: 5px;
     transition: background-color 0.2s ease, height 0.2s ease, width 0.2s ease;
     margin-top: 35px;
+    border-radius: 2px;
 }
 
 .timeline-item.active .timeline-marker {
     background-color: rgba(255, 255, 255, 0.9);
     height: 30px;
-    width: 3px;
+    width: 6px;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 .timeline-time {
@@ -295,12 +300,14 @@
 
 .timeline-current-marker {
     position: absolute;
-    top: 0;
-    left: 50%;
-    width: 2px;
+    width: 4px;
     height: 100%;
-    background-color: rgba(255, 255, 255, 0.5);
+    background-color: #ffffff;
+    z-index: 20;
+    top: 0;
     transform: translateX(-50%);
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    border-radius: 2px;
     pointer-events: none;
 }
 
@@ -430,6 +437,7 @@
     margin: 0 2px;
     display: flex;
     align-items: center;
+    overflow: hidden;
 }
 
 .application-segment {
@@ -437,33 +445,177 @@
     height: 100%;
     top: 0;
     opacity: 0.85;
-    transition: all 0.3s ease;
-    border-radius: 4px;
+    transition: all 0.2s ease;
     overflow: visible;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 5px;
+    cursor: pointer;
 }
 
-.segment-label {
-    position: relative;
-    color: white;
-    font-size: 11px;
-    font-weight: 500;
+/* Add hover effect to see individual frames better */
+.application-segment:hover {
+    opacity: 1;
+    transform: translateY(-3px);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+
+/* Make active frame stand out */
+.application-segment.active {
+    opacity: 1;
+    transform: translateY(-2px);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    z-index: 5;
+}
+
+/* Subtle animation for active segments with multiple screenshots to indicate they can be cycled */
+.application-segment.active .segment-label .screenshot-count {
+    animation: pulse-count 1.5s infinite;
+}
+
+@keyframes pulse-count {
+    0% {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    50% {
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    100% {
+        background: rgba(255, 255, 255, 0.3);
+    }
+}
+
+.segment-label-container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+}
+
+.segment-label-pill {
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 12px;
+    padding: 2px 8px;
+    max-width: 90%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    padding: 4px 12px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 12px;
+    font-size: 11px;
+    color: white;
+    text-shadow: 0 0 1px rgba(0, 0, 0, 0.5);
+    user-select: none;
     backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    max-width: 90%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* For smaller segments, make the pill more compact */
+.application-segment[style*="width: 5%"] .segment-label-pill,
+.application-segment[style*="width: 4%"] .segment-label-pill,
+.application-segment[style*="width: 3%"] .segment-label-pill {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 10px;
+}
+
+.application-segment[style*="width: 2%"] .segment-label-pill,
+.application-segment[style*="width: 1%"] .segment-label-pill {
+    font-size: 8px;
+    padding: 1px 3px;
+    border-radius: 8px;
+}
+
+/* Make segments more visible when hovered */
+.application-segment:hover {
+    filter: brightness(1.2);
+    z-index: 10;
+}
+
+.application-segment:hover .segment-label-pill {
+    background-color: rgba(0, 0, 0, 0.8);
+    transform: scale(1.05);
+    transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.frame-count-pill {
+    display: inline-block;
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 1px 5px;
+    border-radius: 10px;
+    margin-left: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 16px;
     text-align: center;
+    letter-spacing: 0.5px;
+}
+
+/* Make the frame count pill pulse to show it's interactive */
+.application-segment.active .frame-count-pill {
+    animation: pulse-pill 1.5s infinite;
+}
+
+@keyframes pulse-pill {
+    0% {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    50% {
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    100% {
+        background: rgba(255, 255, 255, 0.3);
+    }
+}
+
+/* Keep the old screenshot-count selector for backward compatibility */
+.screenshot-count {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 9px;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 1px 4px;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.9);
+    vertical-align: middle;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    min-width: 16px;
+    text-align: center;
+}
+
+.application-segment.active .screenshot-count {
+    background: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+    color: white;
+}
+
+/* Add badge style for frame counts */
+.application-segment:not(.active) .screenshot-count {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* Make sure segments with more frames stand out */
+.application-segment .screenshot-count {
+    animation: pulse-count 2s infinite;
+}
+
+/* Make sure each segment is clearly distinct */
+.application-segment:nth-child(odd) {
+    z-index: 2;
 }
 
 /* Custom tooltip styling */
@@ -514,18 +666,6 @@
 .application-segment::before,
 .application-segment::after {
     display: none;
-}
-
-/* Add a subtle glow effect on hover */
-.application-segment:hover {
-    opacity: 1;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-}
-
-.application-segment:hover .segment-label {
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
 }
 
 .back-button {
@@ -673,4 +813,45 @@
     text-align: center;
     padding: 20px;
     font-size: 14px;
+}
+
+/* Add cycling indicator for when a user is going through frames */
+.frame-cycle-indicator {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: bold;
+    z-index: 100;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    animation: fade-up 1s forwards;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+@keyframes fade-up {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(5px);
+    }
+
+    20% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
+    80% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+    }
 }

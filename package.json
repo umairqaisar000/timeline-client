@@ -9,7 +9,10 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "copy-scripts": "ts-node src/script-copy.ts",
+    "prebuild": "npm run copy-scripts",
+    "postbuild": "npm run copy-scripts"
   },
   "keywords": [],
   "author": "umairqaisar",

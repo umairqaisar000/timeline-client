@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActiveWindowInfo, TimeBasedAnalysis } from '../../types/interfaces';
 import Button from '../Button/Button';
 import Timeline from '../Timeline';
+import UsageStats from '../UsageStats';
 import './Dashboard.css';
 
 const Dashboard: React.FC = () => {
     const [hasMicrophonePermission, setHasMicrophonePermission] = useState(false);
     const [hasCameraPermission, setHasCameraPermission] = useState(false);
     const [isCapturing, setIsCapturing] = useState(false);
-    const [view, setView] = useState<'capture' | 'timeline'>('capture');
+    const [view, setView] = useState<'capture' | 'timeline' | 'analytics'>('capture');
     const [timeBasedAnalysis, setTimeBasedAnalysis] = useState<TimeBasedAnalysis[]>([]);
     const [activeWindow, setActiveWindow] = useState<ActiveWindowInfo | null>(null);
     const [windowError, setWindowError] = useState<string | null>(null);
@@ -116,8 +117,8 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    const handleViewSwitch = (newView: 'capture' | 'timeline') => {
-        if (isCapturing && newView === 'timeline') {
+    const handleViewSwitch = (newView: 'capture' | 'timeline' | 'analytics') => {
+        if (isCapturing && (newView === 'timeline' || newView === 'capture')) {
             window.electron?.stopScreenCapture();
             setIsCapturing(false);
             stopActiveWindowTracking();
@@ -141,6 +142,12 @@ const Dashboard: React.FC = () => {
                         onClick={() => handleViewSwitch('timeline')}
                     >
                         Timeline
+                    </button>
+                    <button
+                        className={`view-button ${view === 'analytics' ? 'active' : ''}`}
+                        onClick={() => handleViewSwitch('analytics')}
+                    >
+                        Analytics
                     </button>
                 </div>
             </header>
@@ -178,7 +185,7 @@ const Dashboard: React.FC = () => {
                             )
                         )} */}
                     </div>
-                ) : (
+                ) : view === 'timeline' ? (
                     <div className="timeline-view">
                         {timeBasedAnalysis.length > 0 && (
                             <div className="analysis-result">
@@ -187,6 +194,10 @@ const Dashboard: React.FC = () => {
                             </div>
                         )}
                         <Timeline onScreenshotSelect={() => null} onBackClick={() => handleViewSwitch('capture')} />
+                    </div>
+                ) : (
+                    <div className="analytics-view">
+                        <UsageStats />
                     </div>
                 )}
             </main>

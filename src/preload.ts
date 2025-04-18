@@ -8,10 +8,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld(
     'electron',
     {
-        requestMediaAccess: (mediaType: 'microphone' | 'camera') =>
-            ipcRenderer.invoke('request-media-access', mediaType),
         requestAccessibilityPermission: () =>
             ipcRenderer.invoke('request-accessibility-permission'),
+        requestMediaAccess: (mediaType: 'microphone' | 'camera') =>
+            ipcRenderer.invoke('request-media-access', mediaType),
         openSystemPreferences: (mediaType: "microphone" | "camera") =>
             ipcRenderer.invoke("open-system-preferences", mediaType),
         startScreenCapture: () =>
@@ -28,5 +28,7 @@ contextBridge.exposeInMainWorld(
             ipcRenderer.invoke("get-screenshot-analysis", filename),
         getActiveWindow: () =>
             ipcRenderer.invoke("get-active-window"),
+        calculateUsageStats: () =>
+            ipcRenderer.invoke("calculate-usage-stats"),
     }
 );

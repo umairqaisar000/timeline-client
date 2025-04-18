@@ -80,7 +80,8 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                     const analysis = await window.electron.getScreenshotAnalysis(file.filename);
                     return {
                         ...file,
-                        applicationName: analysis?.applicationName || 'Unknown'
+                        applicationName: analysis?.applicationName || 'Unknown',
+                        isFirstFrameOfSession: analysis?.isFirstFrameOfSession || false
                     };
                 } catch (error) {
                     console.error('Error reading analysis:', error);
@@ -93,17 +94,15 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
 
             setScreenshots(screenshotsWithApps);
 
-            // Create application segments by consolidating consecutive same apps
+            // Group consecutive screenshots by application name
             const segments: ApplicationSegment[] = [];
             let currentSegment: ApplicationSegment | null = null;
 
-            for (let i = 0; i < screenshotsWithApps.length; i++) {
-                const current = screenshotsWithApps[i];
-                const next = screenshotsWithApps[i + 1];
-                const appName = current.applicationName || 'Unknown';
+            screenshotsWithApps.forEach((screenshot, index) => {
+                const appName = screenshot.applicationName || 'Unknown';
 
                 if (!currentSegment || currentSegment.applicationName !== appName) {
-                    // If we have a previous segment, add it to the list
+                    // If we have a previous segment, finalize it
                     if (currentSegment) {
                         segments.push(currentSegment);
                     }
@@ -111,15 +110,22 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                     // Start a new segment
                     currentSegment = {
                         applicationName: appName,
-                        startTime: current.timestamp,
-                        endTime: next ? next.timestamp : current.timestamp + 2000,
-                        color: getApplicationColor(appName)
+                        startTime: screenshot.timestamp,
+                        endTime: screenshot.timestamp,
+                        color: getApplicationColor(appName),
+                        startIndex: index,
+                        endIndex: index,
+                        screenshotIndices: [index]
                     };
                 } else {
-                    // Update the end time of the current segment
-                    currentSegment.endTime = next ? next.timestamp : current.timestamp + 2000;
+                    // Extend current segment
+                    if (currentSegment) {
+                        currentSegment.endTime = screenshot.timestamp;
+                        currentSegment.endIndex = index;
+                        currentSegment.screenshotIndices = [...(currentSegment.screenshotIndices || []), index];
+                    }
                 }
-            }
+            });
 
             // Add the last segment if it exists
             if (currentSegment) {
@@ -191,6 +197,9 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                 if (index !== -1) {
                     setCurrentIndex(index);
                     setCurrentPosition(index);
+
+                    // Always update the current app name to ensure UI sync
+                    const currentAppName = screenshots[index].applicationName;
 
                     // Only load background applications and show sidebar if this is a user interaction
                     if (isUserInteraction) {
@@ -601,6 +610,90 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
         }, 300); // Match the animation duration
     };
 
+    // Helper function to calculate positions consistently
+    const calculateTimelinePosition = (index: number) => {
+        if (screenshots.length === 0) return 0;
+
+        const baseWidth = 100 / screenshots.length;
+
+        // Integer part
+        const intIndex = Math.floor(index);
+
+        // Calculate position at the integer index
+        let position = (baseWidth / 2); // Center in the segment space
+        for (let i = 0; i < intIndex; i++) {
+            position += baseWidth;
+        }
+
+        // Add fractional part movement
+        const fractionalPart = index - intIndex;
+        if (fractionalPart > 0 && intIndex < screenshots.length - 1) {
+            position += fractionalPart * baseWidth;
+        }
+
+        return position;
+    };
+
+    // Helper function to find all screenshot indices for a specific app
+    const findAppScreenshotIndices = (appName: string) => {
+        return screenshots
+            .map((screenshot, index) => screenshot.applicationName === appName ? index : -1)
+            .filter(index => index !== -1);
+    };
+
+    // Function to determine which segment the current screenshot belongs to
+    const getCurrentSegmentIndex = () => {
+        if (currentIndex < 0 || currentIndex >= screenshots.length || applicationSegments.length === 0) {
+            return -1;
+        }
+
+        const currentScreenshot = screenshots[currentIndex];
+        const currentTime = currentScreenshot.timestamp;
+        const currentApp = currentScreenshot.applicationName;
+
+        // Find which segment this screenshot belongs to
+        for (let i = 0; i < applicationSegments.length; i++) {
+            const segment = applicationSegments[i];
+
+            // Continue if app name doesn't match
+            if (segment.applicationName !== currentApp) continue;
+
+            // Check if this screenshot's timestamp is within this segment's time range
+            if (currentTime >= segment.startTime && currentTime <= segment.endTime) {
+                return i;
+            }
+        }
+
+        return -1;
+    };
+
+    // Navigate to the next screenshot of the same app
+    const navigateToNextAppScreenshot = (appName: string, currentPos: number) => {
+        // Find all screenshots for this application
+        const segmentScreenshots = screenshots.filter(screenshot =>
+            screenshot.applicationName === appName
+        );
+
+        if (segmentScreenshots.length > 1) {
+            // Find current position in filtered screenshots
+            const currentIndex = segmentScreenshots.findIndex(
+                s => screenshots.findIndex(ss => ss.filename === s.filename) >= currentPos
+            );
+
+            // Navigate to next or loop back to first
+            const nextIndex = (currentIndex + 1) % segmentScreenshots.length;
+            const nextScreenshot = segmentScreenshots[nextIndex];
+
+            // Find the global index of this screenshot
+            const screenshotIndex = screenshots.findIndex(s => s.filename === nextScreenshot.filename);
+
+            if (screenshotIndex >= 0) {
+                loadScreenshot(screenshots[screenshotIndex].filename, true);
+                setCurrentPosition(screenshotIndex);
+            }
+        }
+    };
+
     if (isLoading) {
         return <div className="timeline-loading">Loading timeline...</div>;
     }
@@ -616,7 +709,7 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
 
     // Calculate position marker for the current position (including interpolation)
     const positionMarkerStyle = {
-        left: `${(currentPosition / (screenshots.length - 1)) * 100}%`
+        left: calculateTimelinePosition(currentPosition) + '%'
     };
 
     return (
@@ -723,7 +816,6 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                     {playbackSpeed}x
                 </button>
             </div>
-
             <div
                 className={`timeline ${isDragging ? 'dragging' : ''}`}
                 ref={timelineRef}
@@ -735,59 +827,111 @@ const Timeline: React.FC<TimelineProps> = ({ onScreenshotSelect, onBackClick }) 
                     {/* Application segments */}
                     <div className="application-segments">
                         {applicationSegments.map((segment, index) => {
-                            const startPercent = (segment.startTime - screenshots[0].timestamp) /
-                                (screenshots[screenshots.length - 1].timestamp - screenshots[0].timestamp) * 100;
-                            const endPercent = (segment.endTime - screenshots[0].timestamp) /
-                                (screenshots[screenshots.length - 1].timestamp - screenshots[0].timestamp) * 100;
+                            // Calculate width based on how many frames this segment contains
+                            const totalFrames = screenshots.length;
+                            const segmentFrameCount = (segment.screenshotIndices?.length || 1);
+                            const segmentWidth = (segmentFrameCount / totalFrames) * 100;
+
+                            // Calculate position based on start index
+                            const segmentPosition = (segment.startIndex || 0) / totalFrames * 100;
+
+                            // Check if the current index is within this segment
+                            const isActiveSegment = segment.screenshotIndices?.includes(currentIndex) || false;
 
                             return (
                                 <div
-                                    key={`${segment.applicationName}-${index}`}
-                                    className="application-segment"
+                                    key={`segment-${index}`}
+                                    className={`application-segment ${isActiveSegment ? 'active' : ''}`}
                                     style={{
-                                        left: `${startPercent}%`,
-                                        width: `${endPercent - startPercent}%`,
+                                        left: `${segmentPosition}%`,
+                                        width: `${segmentWidth}%`,
                                         backgroundColor: segment.color
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Navigate to the first screenshot of this segment
+                                        if (segment.startIndex !== undefined && segment.startIndex >= 0) {
+                                            loadScreenshot(screenshots[segment.startIndex].filename, true);
+                                            setCurrentPosition(segment.startIndex);
+
+                                            // Scroll the timeline to center on this segment
+                                            if (timelineRef.current) {
+                                                const segmentElement = e.currentTarget;
+                                                const timelineElement = timelineRef.current;
+                                                const segmentRect = segmentElement.getBoundingClientRect();
+                                                const timelineRect = timelineElement.getBoundingClientRect();
+
+                                                // Calculate the center position
+                                                const centerOffset = segmentRect.left + (segmentRect.width / 2) - timelineRect.left - (timelineRect.width / 2);
+
+                                                // Smooth scroll to center the segment
+                                                timelineElement.scrollBy({
+                                                    left: centerOffset,
+                                                    behavior: 'smooth'
+                                                });
+                                            }
+                                        }
                                     }}
                                     onMouseEnter={(e) => {
                                         const rect = e.currentTarget.getBoundingClientRect();
-                                        setTooltipContent(segment.applicationName);
+                                        // Show application name and frame count in tooltip
+                                        const tooltipText = `${segment.applicationName}`;
+
+                                        setTooltipContent(tooltipText);
                                         setTooltipPosition({
                                             x: rect.left + rect.width / 2,
                                             y: rect.top
                                         });
                                         setShowTooltip(true);
                                     }}
-                                    onMouseLeave={() => setShowTooltip(false)}
+                                    onMouseLeave={() => {
+                                        setShowTooltip(false);
+                                    }}
                                 >
-                                    <span className="segment-label">{segment.applicationName}</span>
+                                    <div className="segment-label-container">
+                                        <div className="segment-label-pill">
+                                            {segmentWidth > 5
+                                                ? segment.applicationName
+                                                : segment.applicationName.slice(0, Math.max(3, Math.floor(segmentWidth))) + '...'
+                                            }
+                                        </div>
+                                    </div>
                                 </div>
                             );
                         })}
                     </div>
 
                     {/* Existing timeline markers */}
-                    {screenshots.map((screenshot, index) => (
-                        <div
-                            key={screenshot.filename}
-                            className={`timeline-item ${currentIndex === index ? 'active' : ''}`}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                loadScreenshot(screenshot.filename);
-                                setCurrentPosition(index);
-                            }}
-                            style={{ width: `${100 / screenshots.length}%` }}
-                        >
-                            <div className="timeline-marker"></div>
-                            {/* <div className="timeline-time">{formatTimelineTime(screenshot.timestamp)}</div> */}
-                        </div>
-                    ))}
-                    <div
-                        className="position-indicator"
-                        style={{ left: `${(currentPosition / (screenshots.length - 1)) * 100}%` }}
-                    ></div>
+                    {screenshots.map((screenshot, index) => {
+                        // Calculate static width for each marker
+                        const baseWidth = 100 / screenshots.length;
+                        const markerWidth = baseWidth * 0.5; // Make markers narrower than segments
+
+                        // Use our consistent positioning function
+                        const position = calculateTimelinePosition(index);
+
+                        return (
+                            <div
+                                key={screenshot.filename}
+                                className={`timeline-item ${currentIndex === index ? 'active' : ''}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    loadScreenshot(screenshot.filename);
+                                    setCurrentPosition(index);
+                                }}
+                                style={{
+                                    width: `${markerWidth}%`,
+                                    left: `${position - (markerWidth / 2)}%` // Center the marker on the position
+                                }}
+                            >
+                                <div className="timeline-marker"></div>
+                            </div>
+                        );
+                    })}
+
+                    {/* Current position marker */}
+                    <div className="timeline-current-marker" style={positionMarkerStyle}></div>
                 </div>
-                <div className="timeline-current-marker"></div>
             </div>
         </div>
     );

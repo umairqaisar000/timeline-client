@@ -29,8 +29,82 @@ let previousImageBuffer: Buffer<ArrayBufferLike> | null = null;
 let lastAnalysisTime = 0;
 const MIN_ANALYSIS_INTERVAL = 10000; // Minimum 10 seconds between analyses
 
+// Create a recording session tracker
+let isFirstFrame = true;
+
 // Path to screenshots directory
 const screenshotsDir = path.join(__dirname, '..', '..', 'screenshots');
+
+// Path to script files - create the proper path
+// These paths need to work both in dev and production
+// In production, the script files are copied to the build directory alongside main.js
+const getActiveWindowExtendedScript = path.join(__dirname, 'applescripts', 'getActiveWindowExtended.applescript');
+const getActiveWindowPSScript = path.join(__dirname, 'powershell', 'getActiveWindow.ps1');
+const getSimpleActiveWindowPSScript = path.join(__dirname, 'powershell', 'getSimpleActiveWindow.ps1');
+
+console.log(`Script path: ${getActiveWindowExtendedScript}`);
+
+// Function to execute AppleScript file with error handling
+async function executeAppleScript(scriptPath: string): Promise<string> {
+  try {
+    // Instead of trying to run the file which has encoding issues,
+    // use a simpler inline script that performs the same function
+    const inlineScript = `
+      tell application "System Events"
+        set frontApp to name of first application process whose frontmost is true
+        set windowTitle to ""
+        
+        try
+          tell process frontApp
+            if exists (1st window whose value of attribute "AXMain" is true) then
+              set windowTitle to name of 1st window whose value of attribute "AXMain" is true
+            end if
+          end tell
+        end try
+        
+        -- Get all processes
+        set appList to {}
+        set runningApps to application processes
+        repeat with appProcess in runningApps
+          try
+            set appName to name of appProcess
+            set end of appList to appName
+          end try
+        end repeat
+        
+        return {frontApp, windowTitle, appList}
+      end tell
+    `;
+
+    try {
+      return (await execAsync(`osascript -e '${inlineScript.replace(/'/g, "'\\''")}'`)).stdout.trim();
+    } catch (scriptError) {
+      console.error('Error executing inline AppleScript:', scriptError);
+
+      // If inline script fails, return a default value
+      return '"Unknown", "Unknown", {}';
+    }
+  } catch (error) {
+    console.error('Error in executeAppleScript:', error);
+    return '"Unknown", "Unknown", {}';
+  }
+}
+
+// Function to execute PowerShell script with error handling
+async function executePowerShellScript(scriptPath: string): Promise<string> {
+  try {
+    // First, check if the file exists
+    if (!fs.existsSync(scriptPath)) {
+      console.error(`Script file not found: ${scriptPath}`);
+      throw new Error(`Script file not found: ${scriptPath}`);
+    }
+
+    return (await execAsync(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`)).stdout.trim();
+  } catch (error) {
+    console.error('Error executing PowerShell script:', error);
+    throw error;
+  }
+}
 
 const createWindow = () => {
   // Create the browser window.
@@ -206,9 +280,12 @@ ipcMain.handle('start-screen-capture', async () => {
     clearInterval(captureInterval);
   }
 
+  console.log('Starting new screen capture');
+
   captureCount = 0;
   previousImageBuffer = null;
   lastAnalysisTime = 0;
+  isFirstFrame = true; // Mark this as the first frame of a new session
 
   if (!fs.existsSync(screenshotsDir)) {
     fs.mkdirSync(screenshotsDir, { recursive: true });
@@ -228,101 +305,8 @@ ipcMain.handle('start-screen-capture', async () => {
       try {
         if (process.platform === 'darwin') {
           // macOS approach using AppleScript
-          const script = `
-            on extractPrimaryDomain(fullURL)
-              -- Remove protocol
-              set tid to AppleScript's text item delimiters
-              set AppleScript's text item delimiters to {"://"}
-              set urlParts to text items of fullURL
-              if (count of urlParts) > 1 then
-                set domainWithPath to item 2 of urlParts
-              else
-                set domainWithPath to item 1 of urlParts
-              end if
-              
-              -- Remove path
-              set AppleScript's text item delimiters to {"/"}
-              set domainParts to text items of domainWithPath
-              set fullDomain to item 1 of domainParts
-              
-              -- Remove www prefix
-              if fullDomain begins with "www." then
-                set cleanDomain to text 5 thru -1 of fullDomain
-              else
-                set cleanDomain to fullDomain
-              end if
-              
-              -- Extract primary domain
-              set AppleScript's text item delimiters to {"."}
-              set domainNameParts to text items of cleanDomain
-              set partsCount to count of domainNameParts
-              
-              -- Get appropriate domain part
-              if partsCount ≥ 3 then
-                set primaryDomain to item (partsCount - 1) of domainNameParts
-              else if partsCount = 2 then
-                set primaryDomain to item 1 of domainNameParts
-              else
-                set primaryDomain to cleanDomain
-              end if
-              
-              set AppleScript's text item delimiters to tid
-              return primaryDomain
-            end extractPrimaryDomain
-
-            tell application "System Events"
-              set frontApp to name of first application process whose frontmost is true
-              set windowTitle to ""
-              
-              try
-                tell process frontApp
-                  if exists (1st window whose value of attribute "AXMain" is true) then
-                    set windowTitle to name of 1st window whose value of attribute "AXMain" is true
-                  end if
-                end tell
-              end try
-              
-              -- Check if the active app is a browser and get URL
-              set isBrowser to false
-              set browserURL to ""
-              
-              if frontApp is "Safari" then
-                try
-                  tell application "Safari"
-                    set browserURL to URL of current tab of front window
-                    set isBrowser to true
-                  end tell
-                end try
-              else if frontApp is "Google Chrome" then
-                try
-                  tell application "Google Chrome"
-                    set browserURL to URL of active tab of front window
-                    set isBrowser to true
-                  end tell
-                end try
-              end if
-              
-              -- If it's a browser, extract the domain from the actual URL
-              if isBrowser and browserURL is not "" then
-                set frontApp to my extractPrimaryDomain(browserURL)
-              end if
-              
-              -- Get list of all running applications
-              set appList to {}
-              set runningApps to every application process
-              repeat with appProcess in runningApps
-                set appName to name of appProcess
-                -- Only add the application name if it's not the front app and not a window title
-                if appName is not frontApp and appName does not contain " - " then
-                  set end of appList to appName
-                end if
-              end repeat
-              
-              return {frontApp, windowTitle, appList}
-            end tell`;
-
-          const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
-          const result = stdout.trim().split(', ');
+          const script = await executeAppleScript(getActiveWindowExtendedScript);
+          const result = script.split(', ');
 
           if (result.length >= 2) {
             const name = result[0].replace(/"/g, '');
@@ -336,135 +320,12 @@ ipcMain.handle('start-screen-capture', async () => {
           }
         } else if (process.platform === 'win32') {
           // Windows approach using PowerShell
-          const script = `
-            Add-Type @"
-            using System;
-            using System.Runtime.InteropServices;
-            public class Win32 {
-              [DllImport("user32.dll")]
-              public static extern IntPtr GetForegroundWindow();
-              [DllImport("user32.dll")]
-              public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
-              [DllImport("user32.dll")]
-              public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int processId);
-            }
-            "@
-
-            function Extract-PrimaryDomain {
-                param([string]$fullURL)
-                
-                # Remove protocol
-                if ($fullURL -match "://") {
-                    $domainWithPath = $fullURL.Split("://")[1]
-                } else {
-                    $domainWithPath = $fullURL
-                }
-                
-                # Remove path
-                $fullDomain = $domainWithPath.Split("/")[0]
-                
-                # Remove www prefix
-                if ($fullDomain.StartsWith("www.")) {
-                    $cleanDomain = $fullDomain.Substring(4)
-                } else {
-                    $cleanDomain = $fullDomain
-                }
-                
-                # Extract primary domain
-                $domainNameParts = $cleanDomain.Split(".")
-                $partsCount = $domainNameParts.Count
-                
-                # Get appropriate domain part
-                if ($partsCount -ge 3) {
-                    $primaryDomain = $domainNameParts[$partsCount - 2]
-                } elseif ($partsCount -eq 2) {
-                    $primaryDomain = $domainNameParts[0]
-                } else {
-                    $primaryDomain = $cleanDomain
-                }
-                
-                return $primaryDomain
-            }
-
-            # Get current window info
-            $window = [Win32]::GetForegroundWindow()
-            $processID = 0
-            [Win32]::GetWindowThreadProcessId($window, [ref]$processID)
-            $process = Get-Process -Id $processID
-            $title = New-Object System.Text.StringBuilder 256
-            [Win32]::GetWindowText($window, $title, 256)
-            $windowTitle = $title.ToString()
-
-            # Check if the active app is a browser and get URL
-            $isBrowser = $false
-            $browserURL = ""
-            $frontApp = $process.ProcessName
-
-            # Chrome browser detection
-            if ($frontApp -eq "chrome") {
-                try {
-                    # This requires the installation of the Chrome extension with native messaging
-                    # This is a placeholder - actual implementation would require Chrome automation
-                    # You might need to use external tools like selenium or browser automation
-                    $isBrowser = $true
-                    
-                    # This is where you would get the URL - this is just an example approach
-                    # Parsing window title as URLs are often in browser titles
-                    if ($windowTitle -match '(https?://[^\\s]+)') {
-                        $browserURL = $matches[1]
-                    }
-                } catch {
-                    Write-Host "Error getting Chrome URL: $_"
-                }
-            }
-            # Edge browser detection
-            elseif ($frontApp -eq "msedge") {
-                try {
-                    # Similar placeholder for Microsoft Edge
-                    $isBrowser = $true
-                    if ($windowTitle -match '(https?://[^\\s]+)') {
-                        $browserURL = $matches[1]
-                    }
-                } catch {
-                    Write-Host "Error getting Edge URL: $_"
-                }
-            }
-            # Firefox browser detection
-            elseif ($frontApp -eq "firefox") {
-                try {
-                    # Similar placeholder for Firefox
-                    $isBrowser = $true
-                    if ($windowTitle -match '(https?://[^\\s]+)') {
-                        $browserURL = $matches[1]
-                    }
-                } catch {
-                    Write-Host "Error getting Firefox URL: $_"
-                }
-            }
-
-            # If it's a browser, extract the domain from the actual URL
-            if ($isBrowser -and $browserURL -ne "") {
-                $frontApp = Extract-PrimaryDomain -fullURL $browserURL
-            }
-
-            # Get list of all running applications
-            $runningApps = Get-Process | Where-Object { $_.ProcessName -ne $frontApp } | Select-Object -ExpandProperty ProcessName
-
-            $obj = @{
-                frontApp = $frontApp
-                windowTitle = $windowTitle
-                runningApps = $runningApps
-            }
-
-            ConvertTo-Json $obj
-          `;
-
-          const { stdout } = await execAsync('powershell -command "' + script + '"');
-          const result = JSON.parse(stdout.trim());
+          const script = await executePowerShellScript(getActiveWindowPSScript);
+          const result = JSON.parse(script);
 
           activeWindow = {
-            title: result.title,
-            applicationName: result.name
+            title: result.windowTitle,
+            applicationName: result.frontApp
           };
           openApplications = result.runningApps;
         }
@@ -486,8 +347,11 @@ ipcMain.handle('start-screen-capture', async () => {
         const currentBuffer = sources[0].thumbnail.toPNG();
         let shouldSave = true;
 
-        // Always save first and last image
-        if (previousImageBuffer && captureCount > 0 && captureCount < MAX_CAPTURES - 1) {
+        // Track if this is the first frame of the session for metadata
+        const isFirstFrameOfSession = captureCount === 0;
+
+        // If this is the first frame, always save it without comparison
+        if (!isFirstFrame && previousImageBuffer && captureCount > 0 && captureCount < MAX_CAPTURES - 1) {
           const img1 = PNG.sync.read(previousImageBuffer);
           const img2 = PNG.sync.read(currentBuffer);
 
@@ -516,6 +380,9 @@ ipcMain.handle('start-screen-capture', async () => {
           } else {
             console.warn('Image dimensions mismatch. Saving image just in case.');
           }
+        } else if (isFirstFrame) {
+          console.log('Saving first frame of new recording session.');
+          isFirstFrame = false; // After first frame, reset the flag
         }
 
         if (shouldSave) {
@@ -533,7 +400,8 @@ ipcMain.handle('start-screen-capture', async () => {
             applicationName: activeWindow?.applicationName || "Unknown",
             windowTitle: activeWindow?.title || "Unknown",
             timestamp: new Date().toISOString(),
-            openApplications: openApplications
+            openApplications: openApplications,
+            isFirstFrameOfSession: isFirstFrameOfSession
           };
 
           fs.writeFileSync(jsonPath, JSON.stringify(jsonData, null, 2));
@@ -551,9 +419,13 @@ ipcMain.handle('start-screen-capture', async () => {
 });
 
 ipcMain.handle('stop-screen-capture', () => {
+  console.log('Stopping screen capture');
+
   if (captureInterval) {
     clearInterval(captureInterval);
     captureInterval = null;
+    previousImageBuffer = null; // Reset for the next session
+    isFirstFrame = true; // Reset for the next session
   }
   return true;
 });
@@ -621,7 +493,8 @@ ipcMain.handle('get-screenshot-analysis', async (_, filename) => {
         applicationName: jsonData.applicationName,
         windowTitle: jsonData.windowTitle || '',
         timestamp: jsonData.timestamp || new Date().toISOString(),
-        backgroundApplications: jsonData.openApplications || []
+        backgroundApplications: jsonData.openApplications || [],
+        isFirstFrameOfSession: jsonData.isFirstFrameOfSession || false
       };
     }
     return null;
@@ -705,129 +578,8 @@ ipcMain.handle('get-active-window', async () => {
 
     if (process.platform === 'darwin') {
       // macOS approach using AppleScript
-      const script = `
-        on extractPrimaryDomain(fullURL)
-          -- Remove protocol
-          set tid to AppleScript's text item delimiters
-          set AppleScript's text item delimiters to {"://"}
-          set urlParts to text items of fullURL
-          if (count of urlParts) > 1 then
-            set domainWithPath to item 2 of urlParts
-          else
-            set domainWithPath to item 1 of urlParts
-          end if
-          
-          -- Remove path
-          set AppleScript's text item delimiters to {"/"}
-          set domainParts to text items of domainWithPath
-          set fullDomain to item 1 of domainParts
-          
-          -- Remove www prefix
-          if fullDomain begins with "www." then
-            set cleanDomain to text 5 thru -1 of fullDomain
-          else
-            set cleanDomain to fullDomain
-          end if
-          
-          -- Extract primary domain
-          set AppleScript's text item delimiters to {"."}
-          set domainNameParts to text items of cleanDomain
-          set partsCount to count of domainNameParts
-          
-          -- Get appropriate domain part
-          if partsCount ≥ 3 then
-            set primaryDomain to item (partsCount - 1) of domainNameParts
-          else if partsCount = 2 then
-            set primaryDomain to item 1 of domainNameParts
-          else
-            set primaryDomain to cleanDomain
-          end if
-          
-          set AppleScript's text item delimiters to tid
-          return primaryDomain
-        end extractPrimaryDomain
-
-        tell application "System Events"
-          set frontApp to name of first application process whose frontmost is true
-          set windowTitle to ""
-          
-          try
-            tell process frontApp
-              if exists (1st window whose value of attribute "AXMain" is true) then
-                set windowTitle to name of 1st window whose value of attribute "AXMain" is true
-              end if
-            end tell
-          end try
-          
-          -- Check if the active app is a browser and get URL
-          set isBrowser to false
-          set browserURL to ""
-          
-          if frontApp is "Safari" then
-            try
-              tell application "Safari"
-                set browserURL to URL of current tab of front window
-                set isBrowser to true
-              end tell
-            end try
-          else if frontApp is "Google Chrome" then
-            try
-              tell application "Google Chrome"
-                set browserURL to URL of active tab of front window
-                set isBrowser to true
-              end tell
-            end try
-          else if frontApp is "Firefox" then
-            try
-              tell application "Firefox"
-                set browserURL to URL of active tab of front window
-                set isBrowser to true
-              end tell
-            end try
-          else if frontApp is "Microsoft Edge" then
-            try
-              tell application "Microsoft Edge"
-                set browserURL to URL of active tab of front window
-                set isBrowser to true
-              end tell
-            end try
-          else if frontApp is "Brave Browser" then
-            try
-              tell application "Brave Browser"
-                set browserURL to URL of active tab of front window
-                set isBrowser to true
-              end tell
-            end try
-          else if frontApp is "Opera" then
-            try
-              tell application "Opera"
-                set browserURL to URL of active tab of front window
-                set isBrowser to true
-              end tell
-            end try
-          end if
-          
-          -- If it's a browser, extract the domain from the actual URL
-          if isBrowser and browserURL is not "" then
-            set frontApp to my extractPrimaryDomain(browserURL)
-          end if
-          
-          -- Get list of all running applications
-          set appList to {}
-          set runningApps to every application process
-          repeat with appProcess in runningApps
-            set appName to name of appProcess
-            -- Only add the application name if it's not the front app and not a window title
-            if appName is not frontApp and appName does not contain " - " then
-              set end of appList to appName
-            end if
-          end repeat
-          
-          return {frontApp, windowTitle, appList}
-        end tell`;
-
-      const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
-      const result = stdout.trim().split(', ');
+      const script = await executeAppleScript(getActiveWindowExtendedScript);
+      const result = script.split(', ');
 
       if (result.length >= 2) {
         const name = result[0].replace(/"/g, '');
@@ -843,37 +595,8 @@ ipcMain.handle('get-active-window', async () => {
       }
     } else if (process.platform === 'win32') {
       // Windows approach using PowerShell
-      const script = `
-        Add-Type @"
-        using System;
-        using System.Runtime.InteropServices;
-        public class Win32 {
-          [DllImport("user32.dll")]
-          public static extern IntPtr GetForegroundWindow();
-          [DllImport("user32.dll")]
-          public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
-          [DllImport("user32.dll")]
-          public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int processId);
-        }
-"@
-        $window = [Win32]::GetForegroundWindow()
-        $processID = 0
-        [Win32]::GetWindowThreadProcessId($window, [ref]$processID)
-        $process = Get-Process -Id $processID
-        $title = New-Object System.Text.StringBuilder 256
-        [Win32]::GetWindowText($window, $title, 256)
-        
-        $obj = @{
-          title = $title.ToString()
-          name = $process.ProcessName
-          path = $process.Path
-        }
-        
-        ConvertTo-Json $obj
-      `;
-
-      const { stdout } = await execAsync('powershell -command "' + script + '"');
-      const result = JSON.parse(stdout.trim());
+      const script = await executePowerShellScript(getSimpleActiveWindowPSScript);
+      const result = JSON.parse(script);
 
       activeWindow = {
         title: result.title,
@@ -893,6 +616,123 @@ ipcMain.handle('get-active-window', async () => {
         name: "Unknown",
         path: "Unknown"
       }
+    };
+  }
+});
+
+// Add handler for calculating usage statistics from screenshots
+ipcMain.handle('calculate-usage-stats', async () => {
+  try {
+    // Get all JSON files
+    const files = fs.readdirSync(screenshotsDir)
+      .filter(file => file.endsWith('.json'))
+      .map(file => {
+        const filePath = path.join(screenshotsDir, file);
+        const jsonData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        return {
+          applicationName: jsonData.applicationName,
+          windowTitle: jsonData.windowTitle || '',
+          backgroundApplications: jsonData.openApplications || [],
+          timestamp: jsonData.timestamp || file.replace('screenshot-', '').replace('.json', ''),
+          file
+        };
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.timestamp).getTime();
+        const timeB = new Date(b.timestamp).getTime();
+        return timeA - timeB;
+      });
+
+    // Skip this calculation if no screenshots
+    if (files.length === 0) {
+      return {
+        appStats: [],
+        totalTimeMs: 0,
+        idleTimeMs: 0
+      };
+    }
+
+    // Calculate time differences between screenshots
+    const timeDiffs = [];
+
+    // Define interface for app usage statistics
+    interface AppUsageStats {
+      totalTimeMs: number;
+      screenshotCount: number;
+    }
+
+    const appUsage: Record<string, AppUsageStats> = {};
+    let totalTimeMs = 0;
+    let idleTimeMs = 0;
+
+    // Initialize all application counts
+    for (const file of files) {
+      if (!appUsage[file.applicationName]) {
+        appUsage[file.applicationName] = {
+          totalTimeMs: 0,
+          screenshotCount: 0
+        };
+      }
+    }
+
+    // Calculate time differences and app usage
+    for (let i = 0; i < files.length - 1; i++) {
+      const current = files[i];
+      const next = files[i + 1];
+
+      const currentTime = new Date(current.timestamp).getTime();
+      const nextTime = new Date(next.timestamp).getTime();
+      const diffMs = nextTime - currentTime;
+
+      // Detect idle time (if time difference is more than 5 seconds)
+      const isIdle = diffMs > 5000;
+
+      if (isIdle) {
+        idleTimeMs += diffMs;
+      } else {
+        // Add time to current application
+        appUsage[current.applicationName].totalTimeMs += diffMs;
+        appUsage[current.applicationName].screenshotCount++;
+      }
+
+      totalTimeMs += diffMs;
+
+      timeDiffs.push({
+        from: current.timestamp,
+        to: next.timestamp,
+        diffMs,
+        isIdle
+      });
+    }
+
+    // Add count for the last screenshot
+    if (files.length > 0) {
+      const last = files[files.length - 1];
+      appUsage[last.applicationName].screenshotCount++;
+    }
+
+    // Convert to array and calculate percentages
+    const appStats = Object.entries(appUsage).map(([applicationName, stats]) => {
+      const { totalTimeMs, screenshotCount } = stats;
+      return {
+        applicationName,
+        totalTimeMs,
+        percentage: totalTimeMs > 0 ? (totalTimeMs / (totalTimeMs - idleTimeMs)) * 100 : 0,
+        screenshotCount
+      };
+    }).sort((a, b) => b.totalTimeMs - a.totalTimeMs);
+
+    return {
+      appStats,
+      totalTimeMs,
+      idleTimeMs
+    };
+  } catch (error) {
+    console.error('Error calculating usage statistics:', error);
+    return {
+      appStats: [],
+      totalTimeMs: 0,
+      idleTimeMs: 0
     };
   }
 });

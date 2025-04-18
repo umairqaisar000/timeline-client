@@ -12,6 +12,7 @@ interface Screenshot {
     path: string;
     timestamp: number;
     applicationName?: string;
+    isFirstFrameOfSession?: boolean;
 }
 
 
